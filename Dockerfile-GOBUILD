@@ -1,0 +1,89 @@
+###########################################################
+# Dockerfile to build the CentOS 6.9 Jenkins GOBUILD Slave
+# Based on: appcontainers/centos:6
+# DATE: 06/14/17
+# COPYRIGHT: appcontainers.com
+###########################################################
+
+# Set the base image in namespace/repo format. 
+# To use repos that are not on the docker hub use the example.com/namespace/repo format.
+FROM appcontainers/centos:6
+
+# File Author / Maintainer
+MAINTAINER Rich Nason rnason@appcontainers.com
+
+###########################################################
+#*********************  APP VERSIONS  *********************
+###########################################################
+
+###########################################################
+#***********  OVERRIDE ENABLED ENV VARIABLES  *************
+###########################################################
+
+ENV TERMTAG JenkinsGOSlave
+
+###########################################################
+#**************  ADD REQUIRED APP FILES  ******************
+###########################################################
+
+# Add Jenkins User
+RUN useradd jenkins && \
+echo "jenkins:jenkins" | chpasswd
+
+ADD authorized_keys /home/jenkins/.ssh/authorized_keys
+ADD authorized_keys /root/.ssh/authorized_keys
+
+RUN chown -R jenkins:jenkins /home/jenkins && \
+chown -R jenkins:jenkins /home/jenkins/.ssh && \
+chmod 0700 /home/jenkins/.ssh &&\
+chmod 0600 /home/jenkins/.ssh/* && \
+chmod 0700 /root/.ssh && \
+chmod 0600 /root/.ssh/*
+
+###########################################################
+#***************  UPDATES & PRE-REQS  *********************
+###########################################################
+
+# Clean, Update, and Install...
+RUN yum clean all && \
+yum -y install sudo vim git wget tar openssh-server net-tools openssl openssl-devel gzip \
+java-1.8.0-openjdk java-1.8.0-openjdk-devel golang || exit 1
+# Set Java Home (Needed for Jenkins)
+RUN export JAVA_HOME=/usr/lib/jvm/jre-1.8.0-openjdk.x86_64 && \
+# Remove yum cache this bad boy can be 150MBish
+yum clean all && \
+rm -fr /var/cache/*
+
+###########################################################
+#***************  APPLICATION INSTALL  ********************
+###########################################################
+
+# Start SSH to pre generate the keys
+# Turn off PAM or SSH won't connect and will complain with:
+# ssh_exchange_identification: Connection closed by remote host
+RUN sed -ri 's/UsePAM yes/#UsePAM yes/g' /etc/ssh/sshd_config && \
+sed -ri 's/#UsePAM no/UsePAM no/g' /etc/ssh/sshd_config && \
+service sshd start && \
+service sshd stop
+
+###########################################################
+#**************  POST DEPLOY CLEAN UP  ********************
+###########################################################
+
+###########################################################
+#*************  CONFIGURE START ITEMS  ********************
+###########################################################
+
+RUN echo -e "service sshd start" >> /root/.bashrc
+
+CMD /bin/bash
+
+###########################################################
+#************  EXPOSE APPLICATION PORTS  ******************
+###########################################################
+
+EXPOSE 22
+
+###########################################################
+#***************  OPTIONAL / LEGACY  **********************
+###########################################################

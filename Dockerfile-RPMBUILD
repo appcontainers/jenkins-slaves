@@ -1,0 +1,123 @@
+###########################################################
+# Dockerfile to build the CentOS 6.9 Jenkins RPMBuild Slave
+# Based on: appcontainers/centos:6
+# DATE: 05/29/17
+# Latest: 09/20/17
+# COPYRIGHT: appcontainers.com
+###########################################################
+
+# Set the base image in namespace/repo format. 
+# To use repos that are not on the docker hub use the example.com/namespace/repo format.
+FROM appcontainers/centos:6
+
+# File Author / Maintainer
+MAINTAINER Rich Nason rnason@appcontainers.com
+
+###########################################################
+#*********************  APP VERSIONS  *********************
+###########################################################
+
+###########################################################
+#***********  OVERRIDE ENABLED ENV VARIABLES  *************
+###########################################################
+
+ENV TERMTAG JenkinsRPMSlave
+
+###########################################################
+#**************  ADD REQUIRED APP FILES  ******************
+###########################################################
+
+# Add Jenkins User
+RUN useradd jenkins && \
+echo "jenkins:jenkins" | chpasswd
+
+ADD authorized_keys /home/jenkins/.ssh/authorized_keys
+ADD authorized_keys /root/.ssh/authorized_keys
+
+RUN chown -R jenkins:jenkins /home/jenkins && \
+chown -R jenkins:jenkins /home/jenkins/.ssh && \
+chmod 0700 /home/jenkins/.ssh &&\
+chmod 0600 /home/jenkins/.ssh/* && \
+chmod 0700 /root/.ssh && \
+chmod 0600 /root/.ssh/*
+
+###########################################################
+#***************  UPDATES & PRE-REQS  *********************
+###########################################################
+
+# Install CERN repositories to get the build requirements met
+RUN rpm --import ftp://ftp.scientificlinux.org/linux/scientific/6.9/x86_64/os/RPM-GPG-KEY-sl6 && \
+rpm --import ftp://ftp.scientificlinux.org/linux/scientific/6.9/x86_64/os/RPM-GPG-KEY-sl && \
+curl http://linuxsoft.cern.ch/cern/scl/slc6-scl.repo > /etc/yum.repos.d/slc.repo
+
+# Clean, Update, and Install...
+RUN yum clean all && \
+yum -y update && \
+yum -y groupinstall "Development Tools" && \
+# Install required packages
+yum -y install sudo vim git wget tar openssh-server net-tools openssl openssl-devel gzip python \
+java-1.8.0-openjdk java-1.8.0-openjdk-devel rpm-build rpmrebuild rpm-sign redhat-rpm-config \
+make gcc pcre-devel kernel-headers kernel-devel gcc-c++ libstdc++-devel zlib-devel libxml2-devel curl-devel \
+cmake cryptopp cryptopp-devel jsoncpp jsoncpp-devel leveldb leveldb-devel libjson-rpc-cpp libjson-rpc-cpp-devel \
+argtable-devel cpuid gmp-devel libcurl-devel libedit-devel libmicrohttpd-devel mesa-dri-drivers miniupnpc-devel \
+opencl-headers libopencl-devel snappy-devel autoconf boost boost-devel \
+fuse-devel fuse-libs devtoolset-3 --nogpgcheck || exit 1
+
+# Grab cmake 3.9 as the newest version of the Eth Miner requires cmake 3.3 or greater
+RUN cd /media && \
+wget https://cmake.org/files/v3.9/cmake-3.9.2-Linux-x86_64.tar.gz && \
+tar -xzvf cmake-3.9.2-Linux-x86_64.tar.gz && \
+/bin/cp -fr /media/cmake-3.9.2-Linux-x86_64/bin/* /usr/bin/ && \
+/bin/cp -fr /media/cmake-3.9.2-Linux-x86_64/share/cmake-3.9 /usr/share/ && \
+rm -fr /media/media/cmake-3.9.2-Linux-x86_64
+
+# Set Java Home (Needed for Jenkins)
+RUN export JAVA_HOME=/usr/lib/jvm/jre-1.8.0-openjdk.x86_64
+
+# Replace gcc and g++ with the scl versions
+RUN mv /usr/bin/gcc /usr/bin/gcc.orig; sudo mv /usr/bin/g++ /usr/bin/g++.orig  || exit 1 && \
+sudo ln -s /opt/rh/devtoolset-3/root/usr/bin/gcc /usr/bin/gcc  || exit 1 && \
+sudo ln -s /opt/rh/devtoolset-3/root/usr/bin/g++ /usr/bin/g++  || exit 1
+
+# clean all again and update
+RUN yum -y update && \
+
+# Remove yum cache this bad boy can be 150MBish
+yum clean all && \
+rm -fr /var/cache/*
+
+###########################################################
+#***************  APPLICATION INSTALL  ********************
+###########################################################
+
+RUN mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}  || exit 1
+
+# Start SSH to pre generate the keys
+# Turn off PAM or SSH won't connect and will complain with:
+# ssh_exchange_identification: Connection closed by remote host
+RUN sed -ri 's/UsePAM yes/#UsePAM yes/g' /etc/ssh/sshd_config && \
+sed -ri 's/#UsePAM no/UsePAM no/g' /etc/ssh/sshd_config && \
+service sshd start && \
+service sshd stop
+
+###########################################################
+#**************  POST DEPLOY CLEAN UP  ********************
+###########################################################
+
+###########################################################
+#*************  CONFIGURE START ITEMS  ********************
+###########################################################
+
+RUN echo -e "service sshd start" >> /root/.bashrc
+
+CMD /bin/bash
+
+###########################################################
+#************  EXPOSE APPLICATION PORTS  ******************
+###########################################################
+
+EXPOSE 22
+
+###########################################################
+#***************  OPTIONAL / LEGACY  **********************
+###########################################################

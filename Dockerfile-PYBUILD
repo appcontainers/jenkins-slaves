@@ -1,0 +1,94 @@
+###########################################################
+# Dockerfile to build the CentOS 6.9 Jenkins Python BUILD Slave
+# Based on: appcontainers/centos:6
+# DATE: 05/12/18
+# COPYRIGHT: appcontainers.com
+###########################################################
+
+# Set the base image in namespace/repo format. 
+# To use repos that are not on the docker hub use the example.com/namespace/repo format.
+FROM appcontainers/centos:6
+
+# File Author / Maintainer
+MAINTAINER Rich Nason rnason@appcontainers.com
+
+###########################################################
+#*********************  APP VERSIONS  *********************
+###########################################################
+
+###########################################################
+#***********  OVERRIDE ENABLED ENV VARIABLES  *************
+###########################################################
+
+ENV TERMTAG JenkinsPYSlave
+
+###########################################################
+#**************  ADD REQUIRED APP FILES  ******************
+###########################################################
+
+# Add Jenkins User
+RUN useradd jenkins && \
+echo "jenkins:jenkins" | chpasswd
+
+ADD authorized_keys /home/jenkins/.ssh/authorized_keys
+ADD authorized_keys /root/.ssh/authorized_keys
+
+RUN chown -R jenkins:jenkins /home/jenkins && \
+chown -R jenkins:jenkins /home/jenkins/.ssh && \
+chmod 0700 /home/jenkins/.ssh &&\
+chmod 0600 /home/jenkins/.ssh/* && \
+chmod 0700 /root/.ssh && \
+chmod 0600 /root/.ssh/*
+
+###########################################################
+#***************  UPDATES & PRE-REQS  *********************
+###########################################################
+
+# Clean, Update, and Install...
+RUN yum clean all && \
+yum -y update && \
+# yum -y groupinstall "Development Tools" && \
+# Install required packages
+yum -y install sudo vim git wget tar openssh-server net-tools openssl openssl-devel gzip python2-twine \
+python34 python34-devel python34-pip pylint python34-pylint python34-virtualenv || exit 1 && \
+# Remove yum cache this bad boy can be 150MBish
+yum clean all && \
+rm -fr /var/cache/*
+
+# Download the PyInstaller Python Compiler
+RUN wget https://github.com/pyinstaller/pyinstaller/releases/download/v3.3.1/PyInstaller-3.3.1.tar.gz -O /home/jenkins/PyInstaller-3.3.1.tar.gz || exit 1 && \
+chown -R jenkins:jenkins /home/jenkins/PyInstaller-3.3.1.tar.gz || exit 1
+
+###########################################################
+#***************  APPLICATION INSTALL  ********************
+###########################################################
+
+# Start SSH to pre generate the keys
+# Turn off PAM or SSH won't connect and will complain with:
+# ssh_exchange_identification: Connection closed by remote host
+RUN sed -ri 's/UsePAM yes/#UsePAM yes/g' /etc/ssh/sshd_config && \
+sed -ri 's/#UsePAM no/UsePAM no/g' /etc/ssh/sshd_config && \
+service sshd start && \
+service sshd stop
+
+###########################################################
+#**************  POST DEPLOY CLEAN UP  ********************
+###########################################################
+
+###########################################################
+#*************  CONFIGURE START ITEMS  ********************
+###########################################################
+
+RUN echo -e "service sshd start" >> /root/.bashrc
+
+CMD /bin/bash
+
+###########################################################
+#************  EXPOSE APPLICATION PORTS  ******************
+###########################################################
+
+EXPOSE 22
+
+###########################################################
+#***************  OPTIONAL / LEGACY  **********************
+###########################################################
